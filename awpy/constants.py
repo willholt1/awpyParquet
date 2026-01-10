@@ -5,7 +5,7 @@ CT_SIDE = "ct"
 T_SIDE = "t"
 
 # Server
-DEFAULT_SERVER_TICKRATE = 128
+DEFAULT_SERVER_TICKRATE = 64 # CS2 locked to 64 tick
 
 # Rounds
 DEFAULT_FREEZE_TIME_IN_SECS = 20.0
