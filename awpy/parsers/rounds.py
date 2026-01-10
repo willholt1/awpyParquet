@@ -177,18 +177,31 @@ def create_round_df(events: dict[str, pl.DataFrame]) -> pl.DataFrame:
     # Join additional round details (such as winner and reason) from the round_end events.
     rounds_df = rounds_df.join(round_end[["tick", "winner", "reason"]], left_on="end", right_on="tick")
 
-    # Replace winner and reason with constants
-    rounds_df = (
-        rounds_df.with_columns(
-            pl.col("winner").str.replace("CT", awpy.constants.CT_SIDE),
+    # Convert winner and reason to expected awpy formats.    
+    # Check if winner column is integer type
+    if rounds_df.schema["winner"] in (pl.Int32, pl.Int64, pl.Int8, pl.Int16):
+        rounds_df = rounds_df.with_columns(
+            pl.col("winner").replace_strict(
+                awpy.converters.TEAM_MAP, default=None, return_dtype=pl.Utf8
+            ).alias("winner")
         )
-        .with_columns(
-            pl.col("winner").str.replace("TERRORIST", awpy.constants.T_SIDE),
+    else:
+        # winner is already a string, normalize it
+        rounds_df = rounds_df.with_columns(
+            pl.col("winner")
+            .str.replace("CT", awpy.constants.CT_SIDE)
+            .str.replace("TERRORIST", awpy.constants.T_SIDE)
+            .str.replace("T", awpy.constants.T_SIDE)
+            .alias("winner")
         )
-        .with_columns(
-            pl.col("winner").str.replace("T", awpy.constants.T_SIDE),
+    
+    # Check if reason column is integer type
+    if rounds_df.schema["reason"] in (pl.Int32, pl.Int64, pl.Int8, pl.Int16):
+        rounds_df = rounds_df.with_columns(
+            pl.col("reason").replace_strict(
+                awpy.converters.ROUND_END_REASON_MAP, default=None, return_dtype=pl.Utf8
+            ).alias("reason")
         )
-    )
 
     # Replace round number with row index (starting at 1) and coalesce official_end data.
     rounds_df = (
