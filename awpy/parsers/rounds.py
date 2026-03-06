@@ -178,10 +178,11 @@ def create_round_df(events: dict[str, pl.DataFrame]) -> pl.DataFrame:
     rounds_df = rounds_df.join(round_end[["tick", "winner", "reason"]], left_on="end", right_on="tick")
 
     # Convert winner and reason to expected awpy formats.    
-    # Check if winner column is integer type
-    if rounds_df.schema["winner"] in (pl.Int32, pl.Int64, pl.Int8, pl.Int16):
+    # Check if winner column is numeric type (integer or float)
+    if rounds_df.schema["winner"] in (pl.Int32, pl.Int64, pl.Int8, pl.Int16, pl.Float32, pl.Float64):
+        # Cast float to int first if needed, then map to string
         rounds_df = rounds_df.with_columns(
-            pl.col("winner").replace_strict(
+            pl.col("winner").cast(pl.Int32).replace_strict(
                 awpy.converters.TEAM_MAP, default=None, return_dtype=pl.Utf8
             ).alias("winner")
         )
@@ -195,10 +196,18 @@ def create_round_df(events: dict[str, pl.DataFrame]) -> pl.DataFrame:
             .alias("winner")
         )
     
-    # Check if reason column is integer type
-    if rounds_df.schema["reason"] in (pl.Int32, pl.Int64, pl.Int8, pl.Int16):
+    # Check if reason column is numeric type (integer or float)
+    if rounds_df.schema["reason"] in (pl.Int32, pl.Int64, pl.Int8, pl.Int16, pl.Float32, pl.Float64):
         rounds_df = rounds_df.with_columns(
-            pl.col("reason").replace_strict(
+            pl.col("reason").cast(pl.Int32).replace_strict(
+                awpy.converters.ROUND_END_REASON_MAP, default=None, return_dtype=pl.Utf8
+            ).alias("reason")
+        )
+    elif rounds_df.schema["reason"] in (pl.Utf8, pl.String):
+        # Reason might be a string with numeric values like "9.0"
+        # Try to cast to int first, then map
+        rounds_df = rounds_df.with_columns(
+            pl.col("reason").cast(pl.Float64).cast(pl.Int32).replace_strict(
                 awpy.converters.ROUND_END_REASON_MAP, default=None, return_dtype=pl.Utf8
             ).alias("reason")
         )
