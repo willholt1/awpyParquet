@@ -437,6 +437,7 @@ class ParquetDemo:
                 - side (str): The team side ("ct", "t", or "all" for total rounds).
                 - n_rounds (int): The number of rounds played by the player on the given side.
         """
+        logger.debug("Calculating player round totals...")
         print(self.ticks.columns)
         player_sides_by_round = self.ticks.select(["name", "steamid", "side", "round_num"]).unique()
 
@@ -471,7 +472,8 @@ class ParquetDemo:
         Returns:
             pl.DataFrame: A DataFrame containing server cvar event data.
         """
-        return pl.from_pandas(self.parser.parse_event("server_cvar"))
+        server_cvar_dict = self.read_events_from_parquet(["server_cvar"])
+        return server_cvar_dict["server_cvar"]
 
     @property
     def default_events(self) -> list[str]:
@@ -508,15 +510,16 @@ class ParquetDemo:
 
     @property
     def detected_events(self) -> list[str]:
-        """Retrieve the list of events detected in the demo file.
+        """Retrieve the list of events detected in the parquet file.
 
-        This property queries the underlying demo parser to obtain a list of all event
+        This property queries the parquet file to obtain a list of all event
         types that have been identified within the demo.
 
         Returns:
             list[str]: A list of event names detected in the demo.
         """
-        return self.parser.list_game_events()
+        df = pl.read_parquet(self.path)
+        return df["event_type"].unique().to_list()
 
     def read_events_from_parquet(
         self,
@@ -658,10 +661,11 @@ class ParquetDemo:
         """
         player_props = player_props if player_props is not None else []
         other_props = other_props if other_props is not None else []
+        required_props = ["steamid", "name"]
 
         df = pl.read_parquet(self.path)
         tick_rows = df.filter(pl.col("event_type").is_null())
-        ticks_df = tick_rows.select(player_props + other_props + ["tick"])
+        ticks_df = tick_rows.select(required_props + player_props + other_props + ["tick"])
 
         return ticks_df
     
