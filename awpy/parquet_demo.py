@@ -334,7 +334,6 @@ class ParquetDemo:
                     that the demo has not been parsed yet. In this case, please run the .parse() method.
         """
         damages = awpy.parsers.utils.get_event_from_parsed_events(self.events, "player_hurt")
-        print(damages.columns)
         damages = awpy.parsers.events.parse_damages(damages)
         return awpy.parsers.rounds.apply_round_num(df=damages, rounds_df=self.rounds, tick_col="tick").filter(
             pl.col("round_num").is_not_null()
@@ -438,7 +437,6 @@ class ParquetDemo:
                 - n_rounds (int): The number of rounds played by the player on the given side.
         """
         logger.debug("Calculating player round totals...")
-        print(self.ticks.columns)
         player_sides_by_round = self.ticks.select(["name", "steamid", "side", "round_num"]).unique()
 
         # Merge with rounds DataFrame on "round".
@@ -555,7 +553,6 @@ class ParquetDemo:
         # Get default of all available event types if none specified
         if events_to_parse is None:
             events_to_parse = events_df["event_type"].unique().to_list()
-            print(events_to_parse)
         
         # Split events into separate DataFrames by type
         events_dict = {}
@@ -622,8 +619,10 @@ class ParquetDemo:
         for event_name, event in events.items():
             logger.debug(f"Parsing event: {event_name} with {len(event)} records")
 
-            print(event_name, event.columns)
-            print(event.head())
+            logger.debug(event_name)
+            logger.debug(event.columns)
+            logger.debug(event.head())
+
             events[event_name] = awpy.parsers.utils.fix_common_names(event)
             if event_name == "round_start":
                 # Label the event as 'start'
