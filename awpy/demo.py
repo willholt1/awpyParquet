@@ -126,7 +126,7 @@ class Demo:
         Raises:
             FileNotFoundError: If the specified file path does not exist.
         """
-        print("hello this is the awpy fork")
+        print("Parsing demo...")
         self.path = Path(path)
         if not self.path.exists():
             file_not_found_error_msg = f"File not found: {self.path}"
