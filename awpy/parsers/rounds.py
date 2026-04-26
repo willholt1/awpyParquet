@@ -196,21 +196,27 @@ def create_round_df(events: dict[str, pl.DataFrame]) -> pl.DataFrame:
             .alias("winner")
         )
     
-    # Check if reason column is numeric type (integer or float)
-    if rounds_df.schema["reason"] in (pl.Int32, pl.Int64, pl.Int8, pl.Int16, pl.Float32, pl.Float64):
-        rounds_df = rounds_df.with_columns(
-            pl.col("reason").cast(pl.Int32).replace_strict(
-                awpy.converters.ROUND_END_REASON_MAP, default=None, return_dtype=pl.Utf8
-            ).alias("reason")
-        )
-    elif rounds_df.schema["reason"] in (pl.Utf8, pl.String):
-        # Reason might be a string with numeric values like "9.0"
-        # Try to cast to int first, then map
-        rounds_df = rounds_df.with_columns(
-            pl.col("reason").cast(pl.Float64).cast(pl.Int32).replace_strict(
-                awpy.converters.ROUND_END_REASON_MAP, default=None, return_dtype=pl.Utf8
-            ).alias("reason")
-        )
+    # Only convert if not already in mapped form
+    reason_map = awpy.converters.ROUND_END_REASON_MAP
+    reason_col = rounds_df["reason"].to_list()
+    # Check if all values are already mapped (i.e., all are in the values of the map)
+    already_mapped = all((v is None or v in reason_map.values()) for v in reason_col)
+    if not already_mapped:
+        # Check if reason column is numeric type (integer or float)
+        if rounds_df.schema["reason"] in (pl.Int32, pl.Int64, pl.Int8, pl.Int16, pl.Float32, pl.Float64):
+            rounds_df = rounds_df.with_columns(
+                pl.col("reason").cast(pl.Int32).replace_strict(
+                    reason_map, default=None, return_dtype=pl.Utf8
+                ).alias("reason")
+            )
+        elif rounds_df.schema["reason"] in (pl.Utf8, pl.String):
+            # Reason might be a string with numeric values like "9.0"
+            # Try to cast to int first, then map
+            rounds_df = rounds_df.with_columns(
+                pl.col("reason").cast(pl.Float64).cast(pl.Int32).replace_strict(
+                    reason_map, default=None, return_dtype=pl.Utf8
+                ).alias("reason")
+            )
 
     # Replace round number with row index (starting at 1) and coalesce official_end data.
     rounds_df = (
