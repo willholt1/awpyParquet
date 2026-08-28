@@ -218,12 +218,15 @@ def create_round_df(events: dict[str, pl.DataFrame]) -> pl.DataFrame:
                 ).alias("reason")
             )
 
-    # Replace round number with row index (starting at 1) and coalesce official_end data.
-    rounds_df = (
-        rounds_df.drop("round_num")
-        .with_columns(pl.coalesce(pl.col("official_end"), pl.col("end")).alias("official_end"))
-        .with_row_index("round_num", offset=1)
-    )
+    # Replace round number with row index (starting at 1) and make official_end backward-compatible.
+    # Older parquet artifacts may not contain official_end at all, so synthesize it from end.
+    rounds_df = rounds_df.drop("round_num")
+    if "official_end" in rounds_df.columns:
+        rounds_df = rounds_df.with_columns(pl.coalesce(pl.col("official_end"), pl.col("end")).alias("official_end"))
+    else:
+        rounds_df = rounds_df.with_columns(pl.col("end").alias("official_end"))
+
+    rounds_df = rounds_df.with_row_index("round_num", offset=1)
 
     # Integrate bomb plant information into the rounds DataFrame.
     return _add_bomb_plant_info(rounds_df, bomb_plants)
