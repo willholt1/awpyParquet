@@ -355,7 +355,33 @@ class ParquetDemo:
             KeyError: If 'player_sound' events are not found in the parsed events. This may
                     indicate that the demo has not been parsed yet. Please run the .parse() method.
         """
-        footsteps = awpy.parsers.utils.get_event_from_parsed_events(self.events, "player_sound")
+        footsteps = awpy.parsers.utils.get_event_from_parsed_events(
+            self.events,
+            "player_sound",
+            empty_if_not_found=True,
+        )
+        if footsteps.is_empty():
+            # Some parquet event sets do not include player_sound. Return a
+            # stable empty schema so validation can continue deterministically.
+            return pl.DataFrame(
+                schema={
+                    "ct_side": pl.String,
+                    "duration": pl.Float32,
+                    "radius": pl.Int32,
+                    "step": pl.Boolean,
+                    "t_side": pl.String,
+                    "tick": pl.Int32,
+                    "player_X": pl.Float64,
+                    "player_Y": pl.Float64,
+                    "player_Z": pl.Float64,
+                    "player_health": pl.Float64,
+                    "player_place": pl.String,
+                    "player_name": pl.String,
+                    "player_steamid": pl.UInt64,
+                    "player_side": pl.String,
+                    "round_num": pl.UInt32,
+                }
+            )
         footsteps = awpy.parsers.events.parse_footsteps(footsteps)
         return awpy.parsers.rounds.apply_round_num(df=footsteps, rounds_df=self.rounds, tick_col="tick").filter(
             pl.col("round_num").is_not_null()
@@ -437,7 +463,12 @@ class ParquetDemo:
                 - n_rounds (int): The number of rounds played by the player on the given side.
         """
         logger.debug("Calculating player round totals...")
-        player_sides_by_round = self.ticks.select(["name", "steamid", "side", "round_num"]).unique()
+        player_sides_by_round = (
+            self.ticks
+            .select(["name", "steamid", "side", "round_num"])
+            .filter(pl.col("side").is_not_null())
+            .unique()
+        )
 
         # Merge with rounds DataFrame on "round".
         player_sides_by_round = player_sides_by_round.join(self.rounds, on="round_num", how="inner")
