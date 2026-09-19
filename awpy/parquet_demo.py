@@ -547,8 +547,21 @@ class ParquetDemo:
         Returns:
             list[str]: A list of event names detected in the demo.
         """
-        df = pl.read_parquet(self.path)
-        return df["event_type"].unique().to_list()
+        return (
+            pl.scan_parquet(self.path)
+            .select(pl.col("event_type"))
+            .filter(pl.col("event_type").is_not_null())
+            .unique()
+            .collect()
+            .get_column("event_type")
+            .to_list()
+        )
+
+    def _scan_event_rows(self, event_names: list[str] | None = None) -> pl.DataFrame:
+        scan = pl.scan_parquet(self.path).filter(pl.col("event_type").is_not_null())
+        if event_names is not None:
+            scan = scan.filter(pl.col("event_type").is_in(event_names))
+        return scan.collect()
 
     def read_events_from_parquet(
         self,
@@ -570,17 +583,14 @@ class ParquetDemo:
         """
         logger.debug(f"Reading events from parquet file: {self.path}")
         
-        # Read the parquet file and filter for event rows (non-null event_type)
-        df = pl.read_parquet(self.path)
-        
+        # Read only event rows, and only the requested event types when possible.
+        events_df = self._scan_event_rows(events_to_parse)
+
         # Check if event_type column exists
-        if "event_type" not in df.columns:
+        if "event_type" not in events_df.columns:
             logger.warning("No 'event_type' column found in parquet file")
             return {}
-        
-        # Filter to only event rows
-        events_df = df.filter(pl.col("event_type").is_not_null())
-        
+
         # Get default of all available event types if none specified
         if events_to_parse is None:
             events_to_parse = events_df["event_type"].unique().to_list()
@@ -638,13 +648,15 @@ class ParquetDemo:
         events: dict[str, pl.DataFrame] = self.read_events_from_parquet(events_to_parse)
 
         # Explicitly parse round start and round end events
-        round_start_dict = self.read_events_from_parquet(["round_start"])
-        if "round_start" in round_start_dict:
-            events["round_start"] = round_start_dict["round_start"]
-            
-        round_end_dict = self.read_events_from_parquet(["round_end"])
-        if "round_end" in round_end_dict:
-            events["round_end"] = round_end_dict["round_end"]
+        if "round_start" not in events:
+            round_start_dict = self.read_events_from_parquet(["round_start"])
+            if "round_start" in round_start_dict:
+                events["round_start"] = round_start_dict["round_start"]
+
+        if "round_end" not in events:
+            round_end_dict = self.read_events_from_parquet(["round_end"])
+            if "round_end" in round_end_dict:
+                events["round_end"] = round_end_dict["round_end"]
 
         # Loop through and process each event
         for event_name, event in events.items():
@@ -693,9 +705,17 @@ class ParquetDemo:
         other_props = other_props if other_props is not None else []
         required_props = ["steamid", "name"]
 
-        df = pl.read_parquet(self.path)
-        tick_rows = df.filter(pl.col("event_type").is_null())
-        ticks_df = tick_rows.select(required_props + player_props + other_props + ["tick"])
+        select_cols: list[str] = []
+        for col in required_props + player_props + other_props + ["tick"]:
+            if col not in select_cols:
+                select_cols.append(col)
+
+        ticks_df = (
+            pl.scan_parquet(self.path)
+            .filter(pl.col("event_type").is_null())
+            .select(select_cols)
+            .collect()
+        )
 
         return ticks_df
     
