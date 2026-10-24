@@ -60,14 +60,31 @@ def _find_valid_round_indices(rounds_df: pl.DataFrame, full_sequence: list[str])
     return valid_indices
 
 
+# The bomb_planted event's own "site" field is a per-demo entity index, not a stable
+# constant - values of 452/453, 201/202 and 395/396 have all been observed, and never
+# the 220 this function used to test for, so every plant was being reported as
+# "bombsite_b". The planter's last_place_name is "BombsiteA"/"BombsiteB" and is
+# requested by default on both the .dem and parquet paths, so use that instead.
+_BOMB_SITE_PLACE_COLUMN = "user_last_place_name"
+_BOMB_SITE_BY_PLACE = {"BombsiteA": "bombsite_a", "BombsiteB": "bombsite_b"}
+_BOMB_SITE_UNKNOWN = "unknown_site"
+_BOMB_SITE_NOT_PLANTED = "not_planted"
+
+
 def _add_bomb_plant_info(rounds_df: pl.DataFrame, bomb_plants: pl.DataFrame) -> pl.DataFrame:
     """Add bomb plant tick and site information to the rounds DataFrame.
 
     For each round, this function looks for bomb plant events occurring between
     the round's start and end ticks. It then adds two new columns:
       - bomb_plant: The tick at which the bomb was planted (if any).
-      - bomb_site: "bombsite_a" or "bombsite_b" based on the site value, or "not planted"
-        if no bomb plant occurred.
+      - bomb_site: "bombsite_a" or "bombsite_b" based on where the planter was standing,
+        "not_planted" if no bomb plant occurred, or "unknown_site" if the plant could not
+        be attributed to a site.
+
+    Both columns are always added, even when there are no bomb plant events at all. A demo
+    split across several files may contain a part with no plants, and omitting the columns
+    there would give that part a different schema from its siblings - which becomes nulls
+    once the parts are concatenated, and compares unequal to "not_planted".
 
     Args:
         rounds_df: DataFrame containing round information with "start" and "end" columns.
@@ -77,28 +94,29 @@ def _add_bomb_plant_info(rounds_df: pl.DataFrame, bomb_plants: pl.DataFrame) -> 
         Updated rounds_df with additional bomb plant information.
     """
     n_rounds = len(rounds_df)
-    bomb_plant_ticks = [None] * n_rounds
-    bomb_plant_sites = ["not_planted"] * n_rounds
+    bomb_plant_ticks: list[int | None] = [None] * n_rounds
+    bomb_plant_sites = [_BOMB_SITE_NOT_PLANTED] * n_rounds
 
-    # If no bomb plant events are provided, return the rounds DataFrame as is.
-    if bomb_plants.is_empty():
-        return rounds_df
+    if not bomb_plants.is_empty():
+        has_place_column = _BOMB_SITE_PLACE_COLUMN in bomb_plants.columns
 
-    for i in range(n_rounds):
-        start_tick = rounds_df["start"][i]
-        end_tick = rounds_df["end"][i]
-        # Filter bomb plant events that occur within the current round's tick range.
-        plant_events = bomb_plants.filter((pl.col("tick") >= start_tick) & (pl.col("tick") <= end_tick))
-        if len(plant_events) > 0:
-            # Use the first bomb plant event for this round.
-            bomb_plant_ticks[i] = plant_events["tick"][0]
-            bomb_plant_sites[i] = "bombsite_a" if plant_events["site"][0] == 220 else "bombsite_b"
+        for i in range(n_rounds):
+            start_tick = rounds_df["start"][i]
+            end_tick = rounds_df["end"][i]
+            # Filter bomb plant events that occur within the current round's tick range.
+            plant_events = bomb_plants.filter((pl.col("tick") >= start_tick) & (pl.col("tick") <= end_tick))
+            if len(plant_events) > 0:
+                # Use the first bomb plant event for this round.
+                bomb_plant_ticks[i] = plant_events["tick"][0]
+                planter_place = plant_events[_BOMB_SITE_PLACE_COLUMN][0] if has_place_column else None
+                bomb_plant_sites[i] = _BOMB_SITE_BY_PLACE.get(planter_place, _BOMB_SITE_UNKNOWN)
 
-    # Add the bomb plant information as new columns.
+    # Add the bomb plant information as new columns. The tick dtype is pinned so that a
+    # part with no plants produces an all-null Int64 column rather than a Null column.
     return rounds_df.with_columns(
         [
-            pl.Series(name="bomb_plant", values=bomb_plant_ticks),
-            pl.Series(name="bomb_site", values=bomb_plant_sites),
+            pl.Series(name="bomb_plant", values=bomb_plant_ticks, dtype=pl.Int64),
+            pl.Series(name="bomb_site", values=bomb_plant_sites, dtype=pl.Utf8),
         ]
     )
 
