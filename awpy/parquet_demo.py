@@ -463,10 +463,20 @@ class ParquetDemo:
                 - n_rounds (int): The number of rounds played by the player on the given side.
         """
         logger.debug("Calculating player round totals...")
+        ticks = self.ticks
+
+        # A round only counts as played if the player was alive at some point in it. An entity
+        # that connects mid-match and never spawns lingers as a corpse with health 0 and a
+        # frozen position for the rest of the demo, and would otherwise be counted as a player
+        # in every subsequent round. health is not requested in every context, so guard on it.
+        if "health" in ticks.columns:
+            ticks = ticks.filter(pl.col("health") > 0)
+
         player_sides_by_round = (
-            self.ticks
+            ticks
             .select(["name", "steamid", "side", "round_num"])
             .filter(pl.col("side").is_not_null())
+            .filter(~pl.col("side").str.to_lowercase().is_in(list(awpy.constants.NON_PLAYING_SIDES)))
             .unique()
         )
 
@@ -597,27 +607,48 @@ class ParquetDemo:
         
         # Split events into separate DataFrames by type
         events_dict = {}
+
+        # Columns that project player state onto an event ("user_X", "attacker_health", ...).
+        # demoparser2 always returns these for the roles an event declares, even when no player
+        # is attached - bomb_exploded carries an all-null user_* block, for instance. Dropping
+        # them just because they are all null would make this path disagree with the demo path
+        # and break parsers that select them by name (parse_bomb reads user_X).
+        #
+        # Restricted to the roles demoparser2 actually projects. "player_" is deliberately not
+        # here: those columns are ordinary event fields, and retaining an all-null "player_name"
+        # collides with the scoreboard's own player_name.
+        role_prefixes = ("user_", "attacker_", "assister_", "victim_")
+
         for event in events_to_parse:
             event_df = events_df.filter(pl.col("event_type") == event)
             if not event_df.is_empty():
                 # Drop the event_type column as it's redundant for individual event DataFrames
                 event_df = event_df.drop("event_type")
-                
-                # Drop columns that only contain null values for this specific event
-                non_null_cols = []
-                for col in event_df.columns:
-                    # Skip if all null
-                    if event_df[col].is_null().all():
-                        continue
-                    # Skip user_steamid if it only contains "nan" strings
-                    if col == "user_steamid" and event_df[col].dtype in [pl.Utf8, pl.String]:
-                        if (event_df[col] == "nan").all():
-                            continue
-                    
-                    non_null_cols.append(col)
-                
+
+                # The converter writes the literal string "nan" where an event has no steamid
+                # for a role. Normalise those to real nulls so the column carries the same
+                # meaning it does on the demo path and can be kept rather than dropped.
+                steamid_fixes = [
+                    pl.when(pl.col(col) == "nan")
+                    .then(pl.lit(None, dtype=event_df[col].dtype))
+                    .otherwise(pl.col(col))
+                    .alias(col)
+                    for col in event_df.columns
+                    if col.endswith("_steamid") and event_df[col].dtype in (pl.Utf8, pl.String)
+                ]
+                if steamid_fixes:
+                    event_df = event_df.with_columns(steamid_fixes)
+
+                # Drop columns that only contain null values for this specific event, except
+                # the role-prefixed player-state columns described above.
+                non_null_cols = [
+                    col
+                    for col in event_df.columns
+                    if not event_df[col].is_null().all() or col.startswith(role_prefixes)
+                ]
+
                 event_df = event_df.select(non_null_cols)
-                
+
                 events_dict[event] = event_df
         
         logger.debug(f"Extracted {len(events_dict)} event types from parquet file")

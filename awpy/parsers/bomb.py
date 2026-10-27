@@ -166,5 +166,10 @@ def parse_bomb(events: dict[str, pl.DataFrame], valid_ticks: pl.Series) -> pl.Da
     )
 
     # Combine all bomb events into one DataFrame and sort by tick.
+    #
+    # diagonal_relaxed rather than a plain concat: the five bomb events are projected from
+    # separate source frames, so a column can legitimately arrive with different widths (an
+    # all-null user_X read back as Float32 against a populated Float64, for example, or an
+    # event missing a column entirely). A strict concat raises SchemaError on the vstack.
     nonempty_dfs = [df for df in [bd, bp, bpnt, bexp, bdef] if not df.is_empty()]
-    return pl.concat(nonempty_dfs).sort("tick")
+    return pl.concat(nonempty_dfs, how="diagonal_relaxed").sort("tick")

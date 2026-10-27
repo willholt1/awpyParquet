@@ -481,10 +481,20 @@ class Demo:
                 - side (str): The team side ("ct", "t", or "all" for total rounds).
                 - n_rounds (int): The number of rounds played by the player on the given side.
         """
+        ticks = self.ticks
+
+        # A round only counts as played if the player was alive at some point in it. An entity
+        # that connects mid-match and never spawns lingers as a corpse with health 0 and a
+        # frozen position for the rest of the demo, and would otherwise be counted as a player
+        # in every subsequent round. health is not requested in every context, so guard on it.
+        if "health" in ticks.columns:
+            ticks = ticks.filter(pl.col("health") > 0)
+
         player_sides_by_round = (
-            self.ticks
+            ticks
             .select(["name", "steamid", "side", "round_num"])
             .filter(pl.col("side").is_not_null())
+            .filter(~pl.col("side").str.to_lowercase().is_in(list(awpy.constants.NON_PLAYING_SIDES)))
             .unique()
         )
 
