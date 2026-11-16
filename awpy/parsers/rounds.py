@@ -150,6 +150,16 @@ def create_round_df(events: dict[str, pl.DataFrame]) -> pl.DataFrame:
     round_end_official = awpy.parsers.utils.get_event_from_parsed_events(events, "round_officially_ended")
     round_freeze_end = awpy.parsers.utils.get_event_from_parsed_events(events, "round_freeze_end")
 
+    # Restarts can emit a result-less end at the new start tick. Sorted after start,
+    # it interrupts the new round's sequence and discards its pistol round.
+    round_end = round_end.filter(
+        ~(
+            pl.col("winner").is_null()
+            & pl.col("reason").is_null()
+            & pl.col("tick").is_in(round_start["tick"].implode())
+        )
+    )
+
     # Retrieve optional bomb planted events; default to empty DataFrame if missing.
     bomb_plants = events.get("bomb_planted", pl.DataFrame())
 

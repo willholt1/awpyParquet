@@ -63,6 +63,11 @@ dem.ticks.to_pandas()
 
 ### Help! The parser doesn't work or returns weird data
 
+Round reconstruction ignores result-less `round_end` events coinciding with a
+`round_start`: these are restart artifacts, not completed rounds. This preserves
+the opening or post-restart pistol round without inventing boundaries, and keeps
+unknown-result rounds whose end does not coincide with a restart.
+
 Counter-Strike demos can be a bit troublesome. It is likely you'll see increased error rates in POV demos. To help us address parsing issues, please open a bug report in our [Github issues](https://github.com/pnxenopoulos/awpy/issues). Additionally, you can reach out in [our Discord](https://discord.gg/3JrhKYcEKW). We're appreciate any help in identifying bugs. We use [LaihoE's demoparser](https://github.com/LaihoE/demoparser) as a backend, so you may also check there for any open issues.
 
 ## Examples and Projects
