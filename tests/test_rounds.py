@@ -103,3 +103,29 @@ def test_existing_incomplete_round_sequences_remain_supported(freeze: list[int],
     assert rounds.height == 1
     assert rounds["end"].item() == 80
     assert rounds["official_end"].item() == (90 if official else 80)
+
+
+@pytest.mark.parametrize("freeze", [True, False])
+def test_missing_official_end_in_middle_does_not_drop_round(freeze: bool):
+    events = _events(
+        [1, 100], [10, 110] if freeze else [110],
+        [80, 180], [190], ["CT", "T"], ["t_killed", "ct_killed"],
+    )
+    rounds = create_round_df(events)
+    assert rounds["end"].to_list() == [80, 180]
+    assert rounds["official_end"].to_list() == [80, 190]
+
+
+@pytest.mark.parametrize(("winner", "reason"), [("1", "10"), ("spectator", "draw")])
+def test_draw_end_at_restart_start_does_not_discard_real_round(winner: str, reason: str):
+    events = _events(
+        [1, 90, 100], [10, 110], [80, 100, 180], [90, 100, 190],
+        ["CT", winner, "T"], ["t_killed", reason, "ct_killed"],
+    )
+    # Numeric strings and already-mapped reasons are separate source formats.
+    if reason == "10":
+        events["round_end"] = events["round_end"].with_columns(
+            pl.Series("winner", [3, 1, 2]), pl.Series("reason", [8, 10, 9]),
+        )
+    rounds = create_round_df(events)
+    assert rounds["end"].to_list() == [80, 180]

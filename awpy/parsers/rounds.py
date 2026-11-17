@@ -41,13 +41,13 @@ def _find_valid_round_indices(rounds_df: pl.DataFrame, full_sequence: list[str])
         if current_sequence == full_sequence:
             valid_indices.extend(range(i, i + sequence_length_full))
         # 2. Check for a 3-event sequence: ["start", "freeze_end", "end"].
-        elif current_sequence == alt_sequence1:
+        elif current_sequence[: len(alt_sequence1)] == alt_sequence1:
             valid_indices.extend(range(i, i + len(alt_sequence1)))
         # 3. Check for a 3-event sequence: ["start", "end", "official_end"].
         elif len(current_sequence) >= len(alt_sequence2) and current_sequence[: len(alt_sequence2)] == alt_sequence2:
             valid_indices.extend(range(i, i + len(alt_sequence2)))
         # 4. Check for a 2-event sequence: ["start", "end"].
-        elif len(current_sequence) == len(alt_sequence3) and current_sequence == alt_sequence3:
+        elif current_sequence[: len(alt_sequence3)] == alt_sequence3:
             valid_indices.extend(range(i, i + len(alt_sequence3)))
         # 5. Lastly, if we're at the very end and only have 3 events, check if they match the first three events of full
         elif (
@@ -150,14 +150,16 @@ def create_round_df(events: dict[str, pl.DataFrame]) -> pl.DataFrame:
     round_end_official = awpy.parsers.utils.get_event_from_parsed_events(events, "round_officially_ended")
     round_freeze_end = awpy.parsers.utils.get_event_from_parsed_events(events, "round_freeze_end")
 
-    # Restarts can emit a result-less end at the new start tick. Sorted after start,
-    # it interrupts the new round's sequence and discards its pistol round.
-    round_end = round_end.filter(
-        ~(
-            pl.col("winner").is_null()
-            & pl.col("reason").is_null()
-            & pl.col("tick").is_in(round_start["tick"].implode())
+    # A restart end sorted after the new start interrupts the next real round.
+    restart_result = (
+        (pl.col("winner").is_null() & pl.col("reason").is_null())
+        | (
+            pl.col("reason").cast(pl.String).str.to_lowercase().is_in(["10", "10.0", "draw"])
+            & pl.col("winner").cast(pl.String).str.to_lowercase().is_in(["1", "1.0", "spectator"])
         )
+    ).fill_null(False)
+    round_end = round_end.filter(
+        ~(restart_result & pl.col("tick").is_in(round_start["tick"].implode()))
     )
 
     # Retrieve optional bomb planted events; default to empty DataFrame if missing.

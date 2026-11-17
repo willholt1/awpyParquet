@@ -67,6 +67,9 @@ Round reconstruction ignores result-less `round_end` events coinciding with a
 `round_start`: these are restart artifacts, not completed rounds. This preserves
 the opening or post-restart pistol round without inventing boundaries, and keeps
 unknown-result rounds whose end does not coincide with a restart.
+Spectator/draw restart ends at that same boundary are treated likewise, while
+scored CT/T ends remain intact. Missing official-end markers are supported in the
+middle of a demo as well as at EOF, using the round's end tick as the fallback.
 
 Counter-Strike demos can be a bit troublesome. It is likely you'll see increased error rates in POV demos. To help us address parsing issues, please open a bug report in our [Github issues](https://github.com/pnxenopoulos/awpy/issues). Additionally, you can reach out in [our Discord](https://discord.gg/3JrhKYcEKW). We're appreciate any help in identifying bugs. We use [LaihoE's demoparser](https://github.com/LaihoE/demoparser) as a backend, so you may also check there for any open issues.
 
